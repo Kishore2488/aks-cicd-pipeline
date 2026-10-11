@@ -1,0 +1,39 @@
+name: CD - Deploy to AKS
+
+# Deliberately workflow_dispatch-only: this is a portfolio project without a
+# live AKS cluster attached, so the deploy stage runs on-demand once
+# AZURE_CREDENTIALS, AKS_RESOURCE_GROUP and AKS_CLUSTER_NAME secrets are set.
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Docker image tag to deploy"
+        required: true
+        default: "latest"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+
+      - name: Apply manifests
+        run: kubectl apply -f k8s/
+
+      - name: Roll out new image
+        run: |
+          kubectl set image deployment/aks-cicd-demo \
+            aks-cicd-demo=ghcr.io/${{ github.repository }}:${{ github.event.inputs.image_tag }}
+          kubectl rollout status deployment/aks-cicd-demo

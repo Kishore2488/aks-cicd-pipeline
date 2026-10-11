@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r app/requirements.txt
+          pip install pytest flake8
+
+      - name: Lint
+        run: flake8 app --max-line-length=100
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+  docker-build:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t aks-cicd-demo:${{ github.sha }} .
+
+      - name: Smoke-test the image
+        run: |
+          docker run -d -p 5000:5000 --name smoke aks-cicd-demo:${{ github.sha }}
+          sleep 3
+          curl -sf http://localhost:5000/health
+          docker stop smoke
+
+  validate-manifests:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        run: |
+          curl -LO https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl
+          chmod +x kubectl
+
+      - name: Validate Kubernetes manifests (client-side)
+        run: ./kubectl apply --dry-run=client -f k8s/ --validate=false

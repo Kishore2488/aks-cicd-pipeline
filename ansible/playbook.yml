@@ -1,0 +1,38 @@
+---
+- name: Configure AKS node pool baseline and monitoring
+  hosts: aks_nodes
+  become: true
+  vars:
+    monitoring_agent_version: "1.29.1"
+
+  tasks:
+    - name: Ensure base packages are present
+      apt:
+        name:
+          - curl
+          - jq
+          - unzip
+        state: present
+        update_cache: true
+
+    - name: Install Azure Monitor agent
+      shell: |
+        curl -sL https://aka.ms/InstallAzureMonitorAgentLinux | bash -s -- --version {{ monitoring_agent_version }}
+      args:
+        creates: /opt/microsoft/azuremonitoragent/bin/mdsd
+
+    - name: Ensure monitoring agent service is running
+      systemd:
+        name: azuremonitoragent
+        state: started
+        enabled: true
+
+    - name: Apply baseline sysctl tuning for container workloads
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: true
+      loop:
+        - { name: "vm.max_map_count", value: "262144" }
+        - { name: "fs.file-max", value: "100000" }
